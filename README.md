@@ -12,6 +12,7 @@ About
 - [架构设计](#架构设计)
 - [快速开始](#快速开始)
 - [部署指南](#部署指南)
+- [端点一览](#端点一览)
 - [Token 管理](#token-管理)
 - [API 使用指南](#api-使用指南)
 - [客户端接入](#客户端接入)
@@ -96,10 +97,12 @@ npx wrangler dev --local
 
 ## 部署指南
 
-### 第一步：创建 KV Namespace
+### 方式一：手动部署（Wrangler CLI）
+
+#### 第一步：创建 KV Namespace
 
 ```bash
-npx wrangler kv:namespace create GLM_TOKENS
+npx wrangler kv namespace create GLM_TOKENS
 ```
 
 命令会输出如下内容，将 `id` 填入 `wrangler.toml`：
@@ -110,7 +113,7 @@ binding = "GLM_TOKENS"
 id = "<你的-namespace-id>"
 ```
 
-### 第二步：配置环境变量
+#### 第二步：配置环境变量
 
 编辑 [`wrangler.toml`](wrangler.toml)：
 
@@ -125,13 +128,104 @@ ADMIN_KEY = "your-random-strong-password"
 
 > **安全提示**：`ADMIN_KEY` 用于保护 `/admin/token` 接口。若留空或未设置，任何人都能修改 Token 映射，生产环境务必设置强密码。
 
-### 第三步：部署
+#### 第三步：部署
 
 ```bash
 npx wrangler deploy
 ```
 
 部署成功后，终端会输出 Worker 的访问地址。由于 `.workers.dev` 域名在中国大陆可能被拦截，建议绑定自定义域名以获得最佳访问体验。
+
+---
+
+### 方式二：GitHub Actions 自动部署
+
+无需本地安装 Wrangler，通过 GitHub Actions 一键部署。支持首次部署和后续重复发布（KV Namespace 自动创建并复用）。
+
+#### 1. Fork 本仓库
+
+将本仓库 Fork 到你的 GitHub 账号。
+
+#### 2. 创建 Cloudflare API Token
+
+1. 登录 [Cloudflare Dashboard → API Tokens](https://dash.cloudflare.com/profile/api-tokens)
+2. 点击 **Create Token** → 选择 **Edit Cloudflare Workers** 模板
+3. 确保权限包含：**Workers:Edit**、**Workers KV Storage:Edit**、**Account Settings:Read**
+4. 创建后复制 Token（仅显示一次）
+
+#### 3. 配置 GitHub Secrets 和 Variables
+
+进入仓库 **Settings → Secrets and variables → Actions**：
+
+**Secrets（敏感信息，存放在 Settings → Secrets）：**
+
+| Name | 说明 |
+|---|---|
+| `CLOUDFLARE_API_TOKEN` | 上一步创建的 Cloudflare API Token |
+| `ADMIN_KEY` | 管理接口保护密码（建议设置随机强密码） |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare 账号 ID（Dashboard 右下角可找到） |
+
+**Variables（可选，存放在 Settings → Variables）：**
+
+| Name | 说明 |
+|---|---|
+| `SIGN_SECRET` | 智谱签名密钥（不填则使用默认值 `8a1317a7468aa3ad86e997d08f3f31cb`） |
+
+> **提示**：`CLOUDFLARE_ACCOUNT_ID` 既可放在 Secrets 也可放在 Variables 中，脚本会自动兼容两种方式。
+
+#### 4. 触发部署
+
+进入仓库 **Actions** 标签页 → 选择 **Deploy to Cloudflare Workers** → 点击 **Run workflow**。
+
+工作流会自动完成：
+- 安装依赖（Node.js 22 + Wrangler v4）
+- 注入环境变量到 `wrangler.toml`
+- 检查并自动创建 KV Namespace（已存在则复用，不会重复创建）
+- 部署 Worker
+
+部署成功后可在 Actions 日志中查看 Worker 的访问地址。后续代码更新后，再次触发即可重新部署。
+
+---
+
+## 端点一览
+
+部署成功后，以下端点均可通过 `https://<your-worker-domain>` 访问：
+
+### 页面
+
+| 方法 | 端点 | 说明 |
+|---|---|---|
+| `GET` | `/` | 欢迎页 |
+| `GET` | `/admin` | 管理面板（Web UI） |
+| `GET` | `/ping` | 健康检查，返回 `pong` |
+
+### API 接口
+
+| 方法 | 端点 | 说明 | 认证方式 |
+|---|---|---|---|
+| `POST` | `/v1/chat/completions` | OpenAI 兼容对话（流式/非流式） | `Authorization: Bearer <api_key>` |
+| `POST` | `/v1/messages` | Claude 兼容对话 | `X-API-Key: <api_key>` |
+| `GET` | `/v1beta/models` | Gemini 模型列表 | - |
+| `POST` | `/v1beta/models/{model}:generateContent` | Gemini 非流式生成 | `x-goog-api-key: <api_key>` |
+| `POST` | `/v1beta/models/{model}:streamGenerateContent` | Gemini 流式生成 | `x-goog-api-key: <api_key>` |
+| `POST` | `/v1/images/generations` | AI 绘图（文生图） | `Authorization: Bearer <api_key>` |
+| `POST` | `/v1/videos/generations` | 视频生成 | `Authorization: Bearer <api_key>` |
+| `GET` | `/v1/models` | OpenAI 格式模型列表 | `Authorization: Bearer <api_key>` |
+| `POST` | `/token/check` | Token 可用性检查 | `Authorization: Bearer <api_key>` |
+
+### 管理接口
+
+需要在请求头中携带 `X-Admin-Key: <your-admin-key>` 进行认证。
+
+| 方法 | 端点 | 说明 |
+|---|---|---|
+| `POST` | `/admin/apikey` | 添加 API Key |
+| `GET` | `/admin/apikey` | 查看已配置的 API Key 列表 |
+| `DELETE` | `/admin/apikey` | 删除 API Key |
+| `POST` | `/admin/token` | 向 Token 池添加 refresh_token |
+| `GET` | `/admin/token` | 查看 Token 池 |
+| `DELETE` | `/admin/token` | 从 Token 池删除 refresh_token |
+| `POST` | `/admin/token/check` | 检查指定 Token 是否可用 |
 
 ---
 
