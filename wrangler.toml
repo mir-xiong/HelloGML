@@ -3,10 +3,11 @@ main = "src/index.ts"
 compatibility_date = "2024-05-12"
 
 [vars]
-SIGN_SECRET = "8a1317a7468aa3ad86e997d08f3f31cb"
-# 管理 API 的保护密钥，建议部署前修改为随机强密码
-# 如未设置，管理接口将开放访问（不推荐用于生产环境）
-ADMIN_KEY = "changeme"
+# 智谱请求签名密钥（CI 中从 GitHub Variables 注入，默认值: 8a1317a7468aa3ad86e997d08f3f31cb）
+SIGN_SECRET = ""
+
+# 管理接口保护密钥（CI 中从 GitHub Secrets 注入）
+ADMIN_KEY = ""
 
 # KV Namespace 绑定，用于存储 api_key -> refresh_token 映射
 # 首次部署前需执行：npx wrangler kv:namespace create "GLM_TOKENS"
